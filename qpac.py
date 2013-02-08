@@ -1,4 +1,8 @@
 from subprocess import check_output
+from datetime import datetime
+
+import requests
+from lxml.html import fromstring
 
 EMPTY = tuple()
 
@@ -29,9 +33,17 @@ def get_pkgs():
                 reqs = l.split(':')[1].strip()
                 if reqs == 'None': reqs = EMPTY
                 else: reqs = tuple(reqs.split(' '))
+            if l.startswith('Version'):
+                version = l.split(':')[1].strip()
+            if l.startswith('URL'):
+                url = l.split(':')
+                url.pop(0)
+                url = ':'.join(url).strip()
+
 
         data[name] = {'optdeps':optdeps, 'desc':desc,
-                    'deps': deps, 'reqs': reqs}
+                      'deps': deps, 'reqs': reqs, 'version': version,
+                      'url': url}
 
     return data
 
@@ -87,6 +99,30 @@ def print_nonreq_libs(pkgs):
         print n, '\n    ', non_req[n], '\n'
 
 
+def fetch_last_git_update(url):
+    if 'github' not in url:
+        return False
+
+    doc = fromstring(requests.get(url).content)
+    last_updated = doc.cssselect("div.authorship time.updated")[0].attrib['datetime'].split('T')[0]
+    return datetime.strptime(last_updated, '%Y-%m-%d').date()
+
+def print_from_git(pkgs):
+    from_git = [(name, item)
+                for name, item in pkgs.iteritems()
+                if '-git' in name]
+    from_git.sort()
+    for name, item in from_git:
+        version_date = datetime.strptime(item['version'].split('-')[0], '%Y%m%d').date()
+        last_updated = fetch_last_git_update(item['url'])
+        if last_updated == False:
+            print name, version_date, '\n    ', item['desc'], '\n'
+
+        else:
+            age = (last_updated-version_date).days
+            #if age <= 0: continue
+            print name, age, 'days old\n    ', item['desc'], '\n'
+
 pkgs = get_pkgs()
 
 def main():
@@ -97,7 +133,8 @@ def main():
 commands:
     missing-opt-deps: prints missing optional dependencies
     size: prints number of installed packages
-    non-req-libs: prints non-required libraries"""
+    non-req-libs: prints non-required libraries
+    from-git: list of packages from git repository"""
 
         return
 
@@ -115,6 +152,9 @@ commands:
         print_nonreq_libs(pkgs)
         return
 
+    if command == 'from-git':
+        print_from_git(pkgs)
+        return
 
 if __name__ == '__main__':
     main()
