@@ -1,3 +1,4 @@
+#!/usr/bin/python2
 from sys import argv
 
 from werkzeug import url_quote
