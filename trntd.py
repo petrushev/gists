@@ -22,7 +22,8 @@ def fetch_list(query):
             if 'idownload' in a.attrib['class']:
                 href = a.attrib['href'].strip()
                 if href!='#':
-                    href = 'http:' + href
+                    if not href.startswith('http'):
+                        href = 'http://'+href.lstrip('/ ')
                     break
 
         yield (torrentname, href,
