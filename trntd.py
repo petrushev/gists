@@ -1,12 +1,12 @@
 #!/usr/bin/python2
 from sys import argv
+from itertools import islice
 
 from werkzeug import url_quote
 from lxml.html import fromstring
 from redis.client import Redis
 
-# using http://kat.ph
-BASEINDEX = "http://dxtorrent.com/usearch/"
+BASEINDEX = "https://thepiratebay.org"
 
 rcache = Redis(db=1)
 
@@ -40,15 +40,13 @@ def cached_get(url, expire=3600):
 
 def fetch_list(query):
     """Fetches search results for a `query` at an index site"""
-    query_ = url_quote(query, safe='')
-    base_url = BASEINDEX + query_
-    url = base_url + "/?field=seeders&sorder=desc"
+    #query_ = url_quote(query, safe='')
+    url = "{0}/search/{1}/0/7/0".format(BASEINDEX, query)
 
     doc = fromstring(cached_get(url))
     doc.make_links_absolute(url)
 
-    for tr in doc.cssselect("tr[id^=torrent_]"):
-        torrentname = tr.cssselect("div.torrentname a.cellMainLink")[0].text_content().strip()
+    for tr in doc.cssselect("table#searchResult tr"):
         href = None
         for a in tr.cssselect("a[href]"):
             href = a.attrib['href'].strip()
@@ -58,31 +56,38 @@ def fetch_list(query):
         if href is None:
             continue
 
-        torrentlink = tr.cssselect("a[data-download]")[0].attrib['href'].strip()
+        torrentname = tr.cssselect("div.detName")
+        if len(torrentname) == 0:
+            continue
 
-        yield (torrentname, href,
-               tr.cssselect("td.nobr")[0].text_content(),
-               tr.cssselect("td.green")[0].text_content(),
-               tr.cssselect("td.red")[0].text_content(),
-               torrentlink)
+        torrentname = torrentname[0].text_content().strip()
+        size = tr.cssselect("font.detDesc")[0].text_content().split('Size:')
+        size.pop(0)
+        size = ' '.join(size).split(',')[0]
+
+        counts = [td.text_content().strip() for td in tr.cssselect('td')[-2:]]
+
+        yield (torrentname, href, size, counts[0], counts[1], None)
+
+PRINT_FMT = '%d\t%s\t\t | %s\t%s\t%s'
 
 def print_list(query):
     """Print list"""
     list_ = fetch_list(query)
     for i in range(20):
         try:
-            torrentname, _, size, seeders, leechers, torrentlink = next(list_)
+            name, magnet, size, seeders, leechers, link = next(list_)
         except StopIteration:
             break
         else:
-            print '%d\t%s\t\t | %s\t%s\t%s' % (i+1, torrentname, size, seeders, leechers)
+            print PRINT_FMT % (i+1, name, size, seeders, leechers)
 
 def download_torrent(query, num):
     """Download torrent from `num` position in results"""
     num = int(num) - 1
-    entry = list(fetch_list(query))[num]
-    print '%d\t%s\t\t | %s\t%s\t%s' % (num+1, entry[0], entry[2], entry[3], entry[4])
-    print entry[5]
+    name, magnet, size, seeders, leechers, link = next(islice(fetch_list(query), num, 1, None))
+    print PRINT_FMT % (num + 1, name, size, seeders, leechers)
+    print magnet
 
 def main():
     argv_ = argv[1:]
