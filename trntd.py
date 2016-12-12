@@ -6,7 +6,7 @@ from werkzeug import url_quote
 from lxml.html import fromstring
 from redis.client import Redis
 
-BASEINDEX = "https://thepiratebay.org"
+BASEINDEX = u"https://thepiratebay.org"
 
 rcache = Redis(db=1)
 
@@ -40,8 +40,7 @@ def cached_get(url, expire=3600):
 
 def fetch_list(query):
     """Fetches search results for a `query` at an index site"""
-    #query_ = url_quote(query, safe='')
-    url = "{0}/search/{1}/0/7/0".format(BASEINDEX, query)
+    url = u"{0}/search/{1}/0/7/0".format(BASEINDEX, query)
 
     doc = fromstring(cached_get(url))
     doc.make_links_absolute(url)
@@ -61,18 +60,19 @@ def fetch_list(query):
             continue
 
         torrentname = torrentname[0].text_content().strip()
-        size = tr.cssselect("font.detDesc")[0].text_content().split('Size:')
+        size = tr.cssselect("font.detDesc")[0].text_content().split('Size')
         size.pop(0)
-        size = ' '.join(size).split(',')[0]
+        size = ' '.join(size).split(',')[0].strip()
 
         counts = [td.text_content().strip() for td in tr.cssselect('td')[-2:]]
 
         yield (torrentname, href, size, counts[0], counts[1], None)
 
-PRINT_FMT = '%d\t%s\t\t | %s\t%s\t%s'
+PRINT_FMT = '%-3d %-67s %11s %7s  %5s'
 
 def print_list(query):
     """Print list"""
+    query = query.decode('utf-8')
     list_ = fetch_list(query)
     for i in range(20):
         try:
@@ -84,9 +84,10 @@ def print_list(query):
 
 def download_torrent(query, num):
     """Download torrent from `num` position in results"""
-    num = int(num) - 1
-    name, magnet, size, seeders, leechers, link = next(islice(fetch_list(query), num, 1, None))
-    print PRINT_FMT % (num + 1, name, size, seeders, leechers)
+    num = int(num)
+    query = query.decode('utf-8')
+    name, magnet, size, seeders, leechers, link = next(islice(fetch_list(query), num - 1, num))
+    print PRINT_FMT % (num, name, size, seeders, leechers)
     print magnet
 
 def main():
