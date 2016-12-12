@@ -1,8 +1,38 @@
 #!/usr/bin/python
 from decimal import Decimal
 import exifread
+from json import loads
 
-import requests
+from redis.client import Redis
+
+
+rcache = Redis(db=1)
+
+
+def cached_get(url, expire=3600):
+    key = 'geodata:' + url
+    content = rcache.get(key)
+
+    if content == '' or content is None:
+        import requests
+
+        q = requests.get(url)
+        content = q.content
+        new_url = q.url
+
+        with rcache.pipeline() as p:
+            p.multi()
+            p.set(key, content)
+            p.expire(key, expire)
+
+            if url != new_url:
+                new_key = 'trntd:' + new_url
+                p.set(new_key, content)
+                p.expire(new_key, expire)
+
+            p.execute()
+
+    return content
 
 
 def parse_coordinates(data):
@@ -33,11 +63,18 @@ def fetch_from_google(coordinates):
 
     #Fetch data
     url = 'https://maps.googleapis.com/maps/api/geocode/json?latlng='+','.join(coordinates)
-    data = requests.get(url).json()
+    data = cached_get(url)
+    data = loads(data)
 
     if data['results'] == []:
         print 'No results found!'
         return
+
+    for i, res in enumerate(data['results']):
+        print res.keys()
+        for item in res['address_components']:
+            print item['types'][0], item['long_name']
+        break
 
     return data['results'][0]['formatted_address']
 
